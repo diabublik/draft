@@ -1,0 +1,401 @@
+#include <stdio.h>
+#include <time.h>
+#include <stdlib.h>
+#include <string.h>
+#include <locale.h>
+
+//максимальная длина строки
+const int MaxLengthLine = 300;
+
+//Отделитель от левой стороны экрана
+const char sep[2] = { ' ', ' ' };
+
+//структура бинарного дерева
+typedef struct BinTree {
+	char* val;//значение
+	char* type;//тип значения
+	BinTree* left;//указатель на левое поддерево
+	BinTree* right;//указатель на правое поддерево
+};
+
+//Возвращает приоритет операции ch
+int Priority(char ch) {
+	switch (ch) {
+		//для операций '+' и '-' приоритет - 1
+	case '+':
+	case '-':
+		return 1;
+		//для операций '*' и '/' приоритет - 2
+	case '*':
+	case '/':
+		return 2;
+	}
+	//для остальных символов приоритет - 100 (самый большой)
+	return 100;
+}
+
+//Проверка построки от first до last строки st на строку в скобках (такая строка - "плохая")
+bool badStr(char* st, int first, int last) {
+	bool bad = true; //предполагаем, что строка - плохая
+	int nest = 0; //счётчик кол-ва скобок
+	char* ptr = st + first; //создаём указатель - счётчик, перемещая его на первый символ подстроки
+	while (ptr != (st + last + 1)) { //пока не дошли до конца подстроки
+		if (*ptr == '(') //если текущий символ - открывающая скобка, то:
+			nest++; //увеличиваем счётчик на единицу
+		if (nest == 0) //если на текущем символе счётчик равен нулю, то:
+			bad = false; //предположение о плохой строке - ложное
+		if (*ptr == ')') //если текущий символ - закрывающая скобка, то:
+			nest--; //уменьшаем счётчик на единицу
+		ptr++; //переходим к следующему символу
+	}
+	return bad; //возвращаем содержимое переменной о предположении плохой строки
+}
+
+//Создаёт бинарное дерево по строке st начиная с позиции first до позиции last
+BinTree* CreateTree(char* st, int first, int last) {
+	//Проверяем строку на наличие "блокирующих" скобок:
+	//Если таких скобок нет, то:
+	if (!badStr(st, first, last)) {
+		//Выделяем память под корневой элемент
+		BinTree* TreePointer = new BinTree;
+		//Создаём дубликат указателя на корень
+		BinTree* Tree = TreePointer;
+		int nest = 0; // создаём переменную под кол-во открывающих скобок
+		//Если указатели совпадают, то есть мы дошли до операнда
+		if (first == last) {
+			//Определяем и записываем тип содержимого (либо целое число, либо переменная)
+			Tree->type = new char[MaxLengthLine];
+			if (strchr("0123456789", *(st + first)) != NULL)
+				strcpy(Tree->type, "int");
+			else
+				strcpy(Tree->type, "var");
+			//Записываем само содержимое
+			Tree->val = new char;
+			*(Tree->val) = *(st + first);
+			//Указываем на отсутствие левого и правого поддерева
+			Tree->left = NULL;
+			Tree->right = NULL;
+			//Возвращаем созданный элемент
+			return Tree;
+		}
+		//Если мы ещё не дошли до операнда (пока находимся на операции), то:
+		//Ищем самую правую операцию с минимальным приоритетом, не учитывая операции в скобках
+		char* minOper = st + first;
+		for (int i = first; i <= last; ++i) {
+			if (*(st + i) == '(')
+				nest++;
+			else if (*(st + i) == ')')
+				nest--;
+			if ((nest == 0) && (Priority(*(st + i)) <= Priority(*minOper)))
+				minOper = st + i;
+		}
+		//Записываем тип элемента (operation)
+		Tree->type = new char[MaxLengthLine];
+		strcpy(Tree->type, "operation");
+		//Записываем саму операцию в элемент
+		Tree->val = new char;
+		*(Tree->val) = *minOper;
+		//Создаём левое поддерево
+		Tree->left = CreateTree(st, first, ((minOper - st) - 1));
+		//Перемещаем указатель на текущий корневой элемент, т. к. во время создания поддерева указатель изменился
+		Tree = TreePointer;
+		//Создаём правое поддерево
+		Tree->right = CreateTree(st, ((minOper - st) + 1), last);
+		//Перемещаем указатель на текущий корневой элемент, т. к. во время создания поддерева указатель изменился
+		Tree = TreePointer;
+		//Если же такие скобки есть, то создаём дерево из строки без блокирующих скобок:
+	}
+	else
+		return CreateTree(st, first + 1, last - 1);
+
+}
+
+//Префиксный вывод дерева root
+void PrefPrintTree(BinTree* root) {
+	if (root != NULL) { //пока дерево существует
+		printf("%c", *(root->val)); //выводим корень
+		PrefPrintTree(root->left); //выводим левое поддерево
+		PrefPrintTree(root->right); //выводим правое поддерево
+	}
+}
+
+//Постфиксный вывод дерева root
+void PostPrintTree(BinTree* root) {
+	if (root != NULL) { //пока дерево существует
+		PostPrintTree(root->left); //выводим левое поддерево
+		PostPrintTree(root->right); //выводим правое поддерево
+		printf("%c", *(root->val)); //выводим корень
+	}
+}
+
+//Симметричный вывод дерева root
+void SimPrintTree(BinTree* root) {
+	if (root != NULL) { //пока дерево существует
+		/*Если: [корень текущего дерева - операция] <И>
+		[приоритет операции в корне текущего дерева больше приоритета операции в корне левого поддерева]*/
+		if ((strcmp(root->type, "operation") == 0) && (Priority(*(root->val)) > Priority(*(root->left->val)))) {
+			//выводим левое поддерево в скобках
+			printf("(");
+			SimPrintTree(root->left);
+			printf(")");
+		}
+		else
+			//выводим левое поддерево без скобок
+			SimPrintTree(root->left);
+		//выводим корень
+		printf("%c", *(root->val));
+		/*
+		Если:
+		1. [корень текущего дерева - операция] <И>
+		2. [[приоритет операции в корне текущего дерева больше приоритета операции в корне правого поддерева
+		3. <ИЛИ> [текущая операция '-' <ИЛИ> '/']] <И> в корне правого поддерева операция <И> приоритеты этих операций равны
+		*/
+		if ((strcmp(root->type, "operation") == 0) && ((Priority(*(root->val)) > Priority(*(root->right->val))) || (((*(root->val) == '-') || (*(root->val) == '/')) && ((strcmp(root->right->type, "operation") == 0) && (Priority(*(root->val)) == Priority(*(root->right->val))))))) {
+			//выводим правое поддерево в скобках
+			printf("(");
+			SimPrintTree(root->right);
+			printf(")");
+		}
+		else
+			//выводим правое поддерево без скобок
+			SimPrintTree(root->right);
+	}
+}
+
+//Возвращает количество переменных в дереве Tree
+int countVar(BinTree* Tree) {
+	if (Tree != NULL) { //пока дерево существует
+		if (strcmp(Tree->type, "var") == 0) //если корень - переменная, то:
+			//возвращаем кол-во переменных в левом поддереве + кол-во переменных в правом поддереве + 1
+			return countVar(Tree->left) + countVar(Tree->right) + 1;
+		else //в противном случае
+			//возвращаем кол-во переменных в левом поддереве + кол-во переменных в правом поддереве
+			return countVar(Tree->left) + countVar(Tree->right);
+	}
+	else //если же дерево не существует, то
+		return 0; //возвращаем 0
+}
+
+//Ввод переменных дерева Tree вручную в массив arr, если они не определены в массиве arrUse
+void inputVarOfTree(BinTree* Tree, double* arr, bool** arrUse) {
+	if (Tree != NULL) { //пока дерево сущестувет
+		//вводим переменные левого поддерева
+		inputVarOfTree(Tree->left, arr, arrUse);
+		//если текущая вершина - переменная и она ранее не определялась
+		if ((strcmp(Tree->type, "var") == 0) && (*(*arrUse + *(Tree->val)) == false)) {
+			//пользователь вводит значение переменной
+			printf("%sВведите значение переменной %c:\n", sep, *(Tree->val));
+			scanf_s("%lf", &*(arr + *(Tree->val)));
+			//делаем запись об определении этой переменной
+			*(*arrUse + *(Tree->val)) = true;
+		}
+		//вводим переменные правого поддерева
+		inputVarOfTree(Tree->right, arr, arrUse);
+	}
+}
+
+//Ввод переменных дерева Tree случайным образом в массив arr, если они не определены в массиве arrUse
+void inputRandomVarOfTree(BinTree* Tree, double* arr, bool** arrUse, int a, int b) {
+	if (Tree != NULL) { //пока дерево сущестувет
+		//вводим переменные левого поддерева
+		inputRandomVarOfTree(Tree->left, arr, arrUse, a, b);
+		//если текущая вершина - переменная и она ранее не определялась
+		if ((strcmp(Tree->type, "var") == 0) && (*(*arrUse + *(Tree->val)) == false)) {
+			//генерируем случайное значение и записываем его в переменную
+			*(arr + *(Tree->val)) = (rand() % ((b - a + 1) * 100) + a * 100.0) / 100.0;
+			//выводим информацию на экран
+			printf("%sЗначение переменной %c равно %7.2lf.\n", sep, *(Tree->val), *(arr + *(Tree->val)));
+			//делаем запись об определении этой переменной
+			*(*arrUse + *(Tree->val)) = true;
+		}
+		//вводим переменные правого поддерева
+		inputRandomVarOfTree(Tree->right, arr, arrUse, a, b);
+	}
+}
+
+//Вычисляет значение выражения по дереву Tree, используя значения переменных arr с проверкой на ошибки isTrue
+double Calculate(BinTree* Tree, double* arr, bool& isTrue) {
+	//пока ошибок нет (пока всё правильно)
+	if (isTrue) {
+		//если текущая вершина - операция, то
+		if (strcmp(Tree->type, "operation") == 0) {
+			//если '+', то складываем значение выражения левого поддерева со значением выражения правого поддерева
+			if (*(Tree->val) == '+')
+				return Calculate(Tree->left, arr, isTrue) + Calculate(Tree->right, arr, isTrue);
+			//если '-', то вычитаем из значения выражения левого поддерева значение выражения правого поддерева
+			else if (*(Tree->val) == '-')
+				return Calculate(Tree->left, arr, isTrue) - Calculate(Tree->right, arr, isTrue);
+			//если '*', то умножаем значение выражения левого поддерева на значение выражения правого поддерева
+			else if (*(Tree->val) == '*')
+				return Calculate(Tree->left, arr, isTrue) * Calculate(Tree->right, arr, isTrue);
+			//если '/', то:
+			else if (*(Tree->val) == '/') {
+				//если значение выражения правого поддерева не ноль
+				if (Calculate(Tree->right, arr, isTrue) != 0)
+					//делим значение выражения левого поддерева на значение выражения правого поддерева
+					return Calculate(Tree->left, arr, isTrue) / Calculate(Tree->right, arr, isTrue);
+				else
+					//в противном случае - выдаём ошибку (делить на ноль нельзя!)
+					isTrue = false;
+			}
+			//если текущая вершина - число, то
+		}
+		else if (strcmp(Tree->type, "int") == 0)
+			return atof(Tree->val); //возвращаем число
+		//если текущая вершина - переменная, то
+		else if (strcmp(Tree->type, "var") == 0) {
+			return *(arr + *(Tree->val)); //возвращаем ранее определённое значение переменной
+		}
+		//если элементов вышеуказанных типов нет, то
+	}
+	else
+		return 0; //возвращаем ноль
+}
+
+//Преобразует строку st с унарными знаками в строку только с бинарными операциями
+char* DeleteUnarOperAndUpMultiplicate(char* st) {
+	char* strRes = new char[MaxLengthLine]; //строка результата
+	*strRes = '\0';
+	//Преобразуем унарные операции в начале строки в аналогичные выражения
+	if (strchr("-+", *st) != NULL)
+		strcat(strRes, "0");
+	if (strchr("*/", *st) != NULL)
+		strcat(strRes, "1");
+	char* ptr = st + 1; //указатель - счётчик (для цикла)
+	char* promStr = new char[MaxLengthLine]; //промежуточная строка
+	char* first = st; //указатель, от которого выделяется промежуточная строка
+	while (*ptr != '\0') { //Идём в цикле до конца строки
+		//Если находим 2 подряд идущих символа вида "(-" (2-ой знак - операция), то 
+		if ((strchr("-+*", *ptr) != 0) && (*(ptr - 1) == '(')) {
+			//копируем в промежуточную строку символы от first до скобки включительно
+			strncpy(promStr, first, (ptr - first));
+			*(promStr + (ptr - first)) = '\0';
+			//присоединяем промежуточную строку к строке результата
+			strcat(strRes, promStr);
+			//в зависимости от знака присоединяем нужную цифру
+			if (strchr("-+", *ptr) != 0)
+				strcat(strRes, "0");
+			else
+				strcat(strRes, "1");
+			//перемещаем указатель first на операцию (там, где ptr)
+			first = ptr;
+		}
+		//Если 2 идущих подряд символа не операции и 1-ый не открывающая скобка, а 2-ой не закрывающая скобка, то:
+		if ((strchr("-+*/)", *ptr) == 0) && (strchr("-+*/(", *(ptr - 1)) == 0)) {
+			//копируем в промежуточную строку символы от first до первого символа
+			strncpy(promStr, first, (ptr - first));
+			*(promStr + (ptr - first)) = '\0';
+			//присоединяем промежуточную строку к строке результата
+			strcat(strRes, promStr);
+			//присоединяем знак умножения к строке результата
+			strcat(strRes, "*");
+			//перемещаем указатель first на второй символ (там, где ptr)
+			first = ptr;
+		}
+		//переходим к следующему символу
+		ptr++;
+	}
+	//присоединяем к строке результата оставшиеся символы
+	strcat(strRes, first);
+	return strRes; //возвращаем строку результата
+}
+
+//Удаление дерева Tree из памяти
+void DeleteTree(BinTree* Tree) {
+	if (Tree != NULL) { // если вершина существует
+		//удаляем левое поддерево
+		DeleteTree(Tree->left); 
+		//удаляем правое поддерево
+		DeleteTree(Tree->right);
+		//удаляем корень
+		delete Tree->type;
+		delete Tree->val;
+		delete Tree;
+	}
+}
+
+/*ГЛАВНАЯ ФУНКЦИЯ*/
+void main()
+{
+	//русский язык
+	setlocale(0, "russian");
+
+	//ввод строки с корректным выражением
+	char* st = new char[MaxLengthLine];
+	*st = '\0';
+	int code;
+	printf("%sкод - действие\n%s  1 - строка \"(1+a)*(2-3*(7-b))\" из примера\n%s  2 - ввод строки вручную\n%sВведите код:\n", sep, sep, sep, sep);
+	scanf_s("%d", &code);
+	if (code == 1)
+		strcpy(st, "(1+a)*(2-3*(7-b))");
+	else if (code == 2) {
+		printf("%sВведите строку, удовлетворяющую правилам:\n", sep);
+		char tempst[100];
+		gets_s(tempst);
+		gets_s(tempst);
+		strcpy(st, tempst);
+	}
+
+	//создание бинарного дерева
+	BinTree* root = NULL;
+	st = DeleteUnarOperAndUpMultiplicate(st);
+	root = CreateTree(st, 0, strlen(st) - 1);
+
+	//вывод полученного дерева на экран
+	printf("\n%sСформированное дерево в виде префиксной записи:\n%s", sep, sep);
+	PrefPrintTree(root);
+	printf("\n");
+	printf("%sСформированное дерево в виде инфиксной записи с учётом скобок:\n%s", sep, sep);
+	SimPrintTree(root);
+	printf("\n");
+	printf("%sСформированное дерево в виде постфиксной записи:\n%s", sep, sep);
+	PostPrintTree(root);
+	printf("\n");
+
+	//Вводим значения переменных
+	double* arr = NULL;
+	bool** arrUse = NULL;
+	//Если в выражении есть переменные (их кол-во больше нуля)
+	if (countVar(root) > 0) {
+		//Определяем какой способ задания значений переменных выберет пользователь
+		printf("\n%sВсего переменных в выражении (в том числе и одинаковых): %d\n", sep, countVar(root));
+		printf("%sкод - действие\n%s  1 - ручной ввод\n%s  2 - генерация случайных чисел\n%sВведите код (чтобы задать значения переменных):\n", sep, sep, sep, sep);
+		int code;
+		scanf_s("%d", &code);
+		//Создаём массив переменных
+		arr = new double[256];
+		//Создаём массив bool, в котором true значит, что значение переменной уже определено (имя переменной в виде числа - индекс массива), а false противоположное
+		arrUse = new bool*;
+		*arrUse = new bool[256];
+		for (int i = 0; i < 256; ++i)
+			*(*arrUse + i) = false;
+		//Вводим значения переменных
+		int a, b;
+		if (code == 1) {
+			inputVarOfTree(root, arr, arrUse);
+		}
+		else if (code == 2) {
+			srand((unsigned)time(NULL));
+			printf("%sВведите два целых числа, задающих диапазон (только целые числа!):\n", sep);
+			scanf_s("%d %d", &a, &b);
+			inputRandomVarOfTree(root, arr, arrUse, a, b);
+		}
+	}
+
+	//выполнение действий выражения и вывод результата вычислений
+	bool flag = true;
+	double res = Calculate(root, arr, flag);
+	if (flag)
+		printf("\n%sРезультат: %7.2lf\n", sep, res);
+	else
+		printf("\n%sОшибка деления на ноль!\n", sep);
+
+	//удаление дерева из памяти
+	DeleteTree(root);
+
+	//задержка экрана
+	printf("\n%s", sep);
+	system("pause");
+}
+
+
